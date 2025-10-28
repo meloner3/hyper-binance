@@ -9,16 +9,18 @@ BINANCE_API_SECRET = 'your_binance_api_secret_here'
 
 # 监控配置
 MONITOR_ADDRESS = '0xc2a30212a8DdAc9e123944d6e29FADdCe994E5f2'
-SCAN_INTERVAL = 1  # 扫描间隔（秒）
+SCAN_INTERVAL = 5  # 扫描间隔（秒） - 仅用于HTTP轮询模式
+USE_WEBSOCKET = True  # 是否使用WebSocket模式（推荐，避免速率限制）
 POSITION_PRINT_INTERVAL = 300  # 持仓打印间隔（秒），默认300秒=5分钟
-USER_FILLS_LIMIT = 20  # 每次获取的订单数量，默认20条
+USER_FILLS_LIMIT = 20  # 每次获取的订单数量，默认20条（仅HTTP轮询模式使用）
 
 # 交易配置
 LEVERAGE = 100  # 杠杆倍数
-POSITION_SIZE_USDC = 10000  # 持仓量（USDC）
+POSITION_SIZE_USDC = 5000  # 持仓量（USDC）
 
 # Hyperliquid API配置
 HYPERLIQUID_API_URL = 'https://api.hyperliquid.xyz/info'
+HYPERLIQUID_WS_URL = 'wss://api.hyperliquid.xyz/ws'  # WebSocket地址
 
 # 交易对配置
 TRADING_PAIRS = {

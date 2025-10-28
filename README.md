@@ -9,6 +9,7 @@
 ## 功能特性
 
 - 🔍 实时监控Hyperliquid指定地址的交易订单
+- 📡 **WebSocket实时推送**（推荐，无速率限制）或HTTP轮询模式
 - 📊 自动检测ETH和BTC的平多仓操作
 - 🤖 自动在币安交易所开空单
 - 📝 完整的日志记录和错误处理
@@ -19,11 +20,20 @@
 
 ## 工作原理
 
-1. 每秒调用Hyperliquid的`user_fills`接口扫描指定地址的历史订单
+### WebSocket模式（推荐）
+1. 通过WebSocket订阅Hyperliquid的`userFills`数据流
+2. 实时接收指定地址的订单成交推送（无延迟，无速率限制）
+3. 检测是否有平多仓操作（卖出且有已实现盈亏的订单）
+4. 如果检测到ETH或BTC的平多仓，立即调用币安API开空单
+
+### HTTP轮询模式
+1. 定期调用Hyperliquid的`userFills`接口扫描指定地址的历史订单
 2. 检测是否有平多仓操作（卖出且有已实现盈亏的订单）
 3. 如果检测到ETH或BTC的平多仓，立即调用币安API开空单
-4. 使用100x杠杆，持仓量10000 USDC
-5. 交易对为BTCUSDC和ETHUSDC
+
+### 交易参数
+- 使用100x杠杆，持仓量可配置（默认5000 USDC）
+- 交易对为BTCUSDC和ETHUSDC
 
 ## 安装步骤
 
@@ -56,11 +66,12 @@ BINANCE_API_SECRET = 'your_binance_api_secret_here'  # 填入你的API密钥
 
 # 监控配置
 MONITOR_ADDRESS = '0xc2a30212a8DdAc9e123944d6e29FADdCe994E5f2'
-SCAN_INTERVAL = 1  # 扫描间隔（秒）
+SCAN_INTERVAL = 5  # 扫描间隔（秒） - 仅用于HTTP轮询模式
+USE_WEBSOCKET = True  # 是否使用WebSocket模式（推荐，避免速率限制）
 
 # 交易配置
 LEVERAGE = 100  # 杠杆倍数
-POSITION_SIZE_USDC = 10000  # 持仓量（USDC）
+POSITION_SIZE_USDC = 5000  # 持仓量（USDC）
 
 # 测试模式（True=使用币安测试网，False=使用正式网）
 USE_TESTNET = False
@@ -97,6 +108,9 @@ python tests/test_fills.py
 
 # 测试 Hyperliquid 持仓查询
 python tests/test_position.py
+
+# 测试 WebSocket 连接
+python tests/test_websocket.py
 
 # 测试币安开单功能（⚠️ 会实际开单）
 python tests/test_order.py

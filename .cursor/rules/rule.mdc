@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+
+# 项目规则
+
+## 文档生成规则
+- 不要在每次更新后自动生成详细文档、总结报告或变更记录
+- 只需要简短总结关键变更即可（1-2句话）
+- 除非用户明确要求，否则不要创建或更新以下类型的文档：
+  - IMPLEMENTATION_REPORT.md
+  - WEBSOCKET_SUMMARY.md
+  - UPGRADE_TO_*.md
+  - COMPARISON.md
+  - 其他总结性文档
+- README.md 的更新除外，可以根据需要更新
+
+## 代码风格
+- 保持代码简洁清晰
+- 优先使用现有的代码结构和模式

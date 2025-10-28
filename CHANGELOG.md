@@ -5,6 +5,40 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2025-10-28
+
+### 新增
+- 🚀 **WebSocket实时推送功能**（重要更新）
+  - 新增 `hyperliquid_monitor_ws.py` WebSocket监控模块
+  - 使用 Hyperliquid WebSocket API 订阅 `userFills` 数据流
+  - 实时接收订单成交推送，无延迟，无速率限制
+  - 自动重连机制，确保连接稳定性
+  - 支持快照数据初始化，避免重复处理历史订单
+  - **心跳机制**：每30秒自动发送ping，保持连接活跃（解决60秒超时断开问题）
+
+- ⚙️ **监控模式配置**
+  - 新增 `USE_WEBSOCKET` 配置项，可选择 WebSocket 或 HTTP 轮询模式
+  - WebSocket 模式为默认推荐模式
+  - 保留 HTTP 轮询模式作为备选方案
+
+- 🧪 **WebSocket 测试脚本**
+  - 新增 `tests/test_websocket.py` 用于测试 WebSocket 连接
+
+### 改进
+- 📡 **避免速率限制问题**
+  - WebSocket 模式无需轮询，完全避免 API 速率限制
+  - 实时推送比轮询更及时，响应更快
+
+- 📊 **统计信息增强**
+  - WebSocket 模式新增消息统计、订单接收统计、错误统计
+
+### 依赖
+- ➕ 新增 `websocket-client==1.6.4` 依赖
+
+### 文档
+- 📝 更新 README.md，说明 WebSocket 功能
+- 📝 更新配置示例，添加 WebSocket 相关配置
+
 ## [1.2.0] - 2025-10-28
 
 ### 新增

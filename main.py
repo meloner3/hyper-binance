@@ -19,16 +19,19 @@ from config import (
     LEVERAGE,
     POSITION_SIZE_USDC,
     HYPERLIQUID_API_URL,
+    HYPERLIQUID_WS_URL,
     TRADING_PAIRS,
     LOG_FILE,
     LOG_LEVEL,
     USE_TESTNET,
+    USE_WEBSOCKET,
     TELEGRAM_ENABLED,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID
 )
 from logger_config import setup_logger
 from hyperliquid_monitor import HyperliquidMonitor
+from hyperliquid_monitor_ws import HyperliquidMonitorWS
 from binance_trader import BinanceTrader
 from telegram_notifier import TelegramNotifier
 
@@ -62,11 +65,20 @@ class TradingBot:
         
         # 初始化Hyperliquid监控器
         logger.info("初始化Hyperliquid监控器...")
-        self.monitor = HyperliquidMonitor(
-            api_url=HYPERLIQUID_API_URL,
-            monitor_address=MONITOR_ADDRESS,
-            user_fills_limit=USER_FILLS_LIMIT
-        )
+        if USE_WEBSOCKET:
+            logger.info("使用WebSocket模式（实时推送，无速率限制）")
+            self.monitor = HyperliquidMonitorWS(
+                api_url=HYPERLIQUID_API_URL,
+                ws_url=HYPERLIQUID_WS_URL,
+                monitor_address=MONITOR_ADDRESS
+            )
+        else:
+            logger.info("使用HTTP轮询模式")
+            self.monitor = HyperliquidMonitor(
+                api_url=HYPERLIQUID_API_URL,
+                monitor_address=MONITOR_ADDRESS,
+                user_fills_limit=USER_FILLS_LIMIT
+            )
         
         # 初始化币安交易客户端
         logger.info("初始化币安交易客户端...")
@@ -298,7 +310,7 @@ class TradingBot:
         logger.info("🤖 Hyperliquid监控交易机器人")
         logger.info("=" * 80)
         logger.info(f"监控地址: {MONITOR_ADDRESS}")
-        logger.info(f"扫描间隔: {SCAN_INTERVAL}秒")
+        logger.info(f"监控模式: {'WebSocket (实时推送)' if USE_WEBSOCKET else f'HTTP轮询 (间隔{SCAN_INTERVAL}秒)'}")
         logger.info(f"杠杆倍数: {LEVERAGE}x")
         logger.info(f"持仓量: {POSITION_SIZE_USDC} USDC")
         logger.info(f"交易对: {', '.join([f'{k}→{v}' for k, v in TRADING_PAIRS.items()])}")
@@ -372,11 +384,19 @@ class TradingBot:
             logger.info("")
             
             # 开始监控
-            self.monitor.start_monitoring(
-                scan_interval=SCAN_INTERVAL,
-                callback=self.on_close_position_detected,
-                position_print_interval=POSITION_PRINT_INTERVAL
-            )
+            if USE_WEBSOCKET:
+                # WebSocket模式
+                self.monitor.start_monitoring(
+                    callback=self.on_close_position_detected,
+                    position_print_interval=POSITION_PRINT_INTERVAL
+                )
+            else:
+                # HTTP轮询模式
+                self.monitor.start_monitoring(
+                    scan_interval=SCAN_INTERVAL,
+                    callback=self.on_close_position_detected,
+                    position_print_interval=POSITION_PRINT_INTERVAL
+                )
             
         except KeyboardInterrupt:
             logger.info("用户中断，停止监控")
