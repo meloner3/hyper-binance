@@ -38,11 +38,13 @@ class HyperliquidMonitorWS:
         self.ws = None
         self.ws_connected = False
         self.ws_thread = None
+        self.keepalive_thread = None  # 保活线程
         self.callback = None
         self.running = False
         self.reconnect_count = 0  # 重连次数
         self.last_ping_time = 0  # 上次ping时间
         self.last_pong_time = 0  # 上次pong时间
+        self.last_message_time = 0  # 上次收到消息的时间
         
         # 统计信息
         self.ws_message_count = 0
@@ -55,6 +57,7 @@ class HyperliquidMonitorWS:
         """WebSocket消息处理"""
         try:
             self.ws_message_count += 1
+            self.last_message_time = time.time()  # 更新最后收到消息的时间
             data = json.loads(message)
             
             # 检查消息类型
@@ -130,11 +133,44 @@ class HyperliquidMonitorWS:
         self.pong_count += 1
         logger.debug(f"💗 收到Pong (总计: {self.pong_count})")
     
+    def _keepalive_worker(self):
+        """保活工作线程 - 定期发送ping消息并检测连接健康"""
+        while self.running:
+            try:
+                time.sleep(30)  # 每30秒检查一次
+                
+                if not self.ws_connected:
+                    continue
+                
+                current_time = time.time()
+                
+                # 检查是否长时间没有收到消息（超过50秒）
+                if self.last_message_time > 0:
+                    time_since_last_msg = current_time - self.last_message_time
+                    if time_since_last_msg > 50:
+                        logger.warning(f"⚠️  已经 {time_since_last_msg:.0f} 秒没有收到消息，主动重连")
+                        if self.ws:
+                            self.ws.close()
+                        continue
+                
+                # 发送应用层ping消息保持活跃
+                if self.ws and self.ws_connected:
+                    try:
+                        # 发送一个JSON格式的ping（应用层消息）
+                        self.ws.send('{"method":"ping"}')
+                        logger.debug("💓 发送保活ping")
+                    except Exception as e:
+                        logger.debug(f"保活ping发送失败: {e}")
+                        
+            except Exception as e:
+                logger.error(f"保活线程错误: {e}")
+    
     def _on_ws_open(self, ws):
         """WebSocket连接建立"""
         logger.info("✅ WebSocket连接已建立")
         self.ws_connected = True
         self.reconnect_count = 0  # 重置重连计数器
+        self.last_message_time = time.time()
         
         # 发送订阅消息
         subscribe_msg = {
@@ -147,6 +183,13 @@ class HyperliquidMonitorWS:
         
         logger.info(f"📤 发送订阅请求: {subscribe_msg}")
         ws.send(json.dumps(subscribe_msg))
+        
+        # 启动保活线程
+        if self.keepalive_thread is None or not self.keepalive_thread.is_alive():
+            self.keepalive_thread = threading.Thread(target=self._keepalive_worker)
+            self.keepalive_thread.daemon = True
+            self.keepalive_thread.start()
+            logger.debug("🔄 保活线程已启动")
     
     def _connect_websocket(self):
         """连接WebSocket"""
@@ -162,15 +205,12 @@ class HyperliquidMonitorWS:
                 on_pong=self._on_ws_pong
             )
             
-            # 在新线程中运行WebSocket，启用心跳机制
-            # ping_interval: 每20秒发送一次ping（减少间隔以保持连接）
-            # ping_timeout: 等待pong响应的超时时间
+            # 在新线程中运行WebSocket
             self.ws_thread = threading.Thread(
                 target=self.ws.run_forever,
                 kwargs={
-                    'ping_interval': 20,  # 每20秒发送心跳（从30秒减少到20秒）
-                    'ping_timeout': 10,   # 10秒超时
-                    'reconnect': 5        # 自动重连间隔
+                    'ping_interval': 0,  # 禁用自动ping，使用我们自己的保活机制
+                    'ping_timeout': None
                 }
             )
             self.ws_thread.daemon = True
@@ -186,7 +226,7 @@ class HyperliquidMonitorWS:
                 logger.error("WebSocket连接超时")
                 return False
             
-            logger.info(f"💓 心跳机制已启用: 每20秒发送一次ping")
+            logger.info(f"💓 保活机制已启用: 每30秒发送一次应用层ping")
             return True
             
         except Exception as e:
