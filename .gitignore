@@ -46,3 +46,4 @@ Thumbs.db
 
 # 项目特定
 trading_monitor.log*
+trade_state.json  # 开单状态文件（可选：如果需要保留状态可以提交此文件）

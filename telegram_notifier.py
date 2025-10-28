@@ -95,11 +95,19 @@ class TelegramNotifier:
             return False
         
         try:
-            # 在新的事件循环中运行异步函数
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # 尝试获取当前事件循环
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+            except RuntimeError:
+                # 如果没有事件循环，创建一个新的
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            # 运行异步函数
             result = loop.run_until_complete(self._send_message_async(message, parse_mode))
-            loop.close()
             return result
         except Exception as e:
             logger.error(f"发送Telegram消息时发生错误: {e}")

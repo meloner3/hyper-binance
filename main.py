@@ -5,6 +5,9 @@ import logging
 from typing import Dict
 import signal
 import sys
+import json
+import os
+from datetime import datetime
 
 from config import (
     BINANCE_API_KEY,
@@ -31,6 +34,9 @@ from telegram_notifier import TelegramNotifier
 
 logger = logging.getLogger(__name__)
 
+# 开单状态文件路径
+TRADE_STATE_FILE = 'trade_state.json'
+
 
 class TradingBot:
     """交易机器人主类"""
@@ -38,6 +44,13 @@ class TradingBot:
     def __init__(self):
         """初始化交易机器人"""
         self.running = True
+        
+        # 开单状态跟踪字典
+        # 格式: {币种: {'opened': True/False, 'timestamp': 时间戳, 'order_id': 订单ID}}
+        self.trade_state = {}
+        
+        # 加载之前的开单状态
+        self.load_trade_state()
         
         # 初始化Telegram通知器
         logger.info("初始化Telegram通知器...")
@@ -79,6 +92,98 @@ class TradingBot:
         self.running = False
         sys.exit(0)
     
+    def load_trade_state(self):
+        """从文件加载开单状态"""
+        try:
+            if os.path.exists(TRADE_STATE_FILE):
+                with open(TRADE_STATE_FILE, 'r', encoding='utf-8') as f:
+                    self.trade_state = json.load(f)
+                logger.info(f"✅ 已加载开单状态: {self.trade_state}")
+            else:
+                logger.info("未找到开单状态文件，将创建新的状态记录")
+                self.trade_state = {}
+        except Exception as e:
+            logger.error(f"加载开单状态失败: {e}")
+            self.trade_state = {}
+    
+    def save_trade_state(self):
+        """保存开单状态到文件"""
+        try:
+            with open(TRADE_STATE_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.trade_state, f, ensure_ascii=False, indent=2)
+            logger.debug(f"已保存开单状态: {self.trade_state}")
+        except Exception as e:
+            logger.error(f"保存开单状态失败: {e}")
+    
+    def is_already_opened(self, coin: str) -> bool:
+        """
+        检查该币种是否已经开过单
+        
+        Args:
+            coin: 币种名称
+            
+        Returns:
+            True表示已开单，False表示未开单
+        """
+        if coin in self.trade_state:
+            state = self.trade_state[coin]
+            if state.get('opened', False):
+                logger.info(f"⚠️  {coin} 已经开过单，跳过")
+                logger.info(f"   开单时间: {state.get('timestamp', 'N/A')}")
+                logger.info(f"   订单ID: {state.get('order_id', 'N/A')}")
+                return True
+        return False
+    
+    def mark_as_opened(self, coin: str, order_id: str = 'N/A'):
+        """
+        标记该币种已开单
+        
+        Args:
+            coin: 币种名称
+            order_id: 订单ID
+        """
+        self.trade_state[coin] = {
+            'opened': True,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'order_id': order_id
+        }
+        self.save_trade_state()
+        logger.info(f"✅ 已标记 {coin} 为已开单状态")
+    
+    def reset_trade_state(self, coin: str = None):
+        """
+        重置开单状态
+        
+        Args:
+            coin: 币种名称，如果为None则重置所有币种
+        """
+        if coin is None:
+            self.trade_state = {}
+            logger.info("✅ 已重置所有币种的开单状态")
+        else:
+            if coin in self.trade_state:
+                del self.trade_state[coin]
+                logger.info(f"✅ 已重置 {coin} 的开单状态")
+            else:
+                logger.info(f"⚠️  {coin} 没有开单记录")
+        self.save_trade_state()
+    
+    def get_trade_state_summary(self) -> str:
+        """
+        获取开单状态摘要
+        
+        Returns:
+            状态摘要字符串
+        """
+        if not self.trade_state:
+            return "当前无开单记录"
+        
+        summary = "开单状态:\n"
+        for coin, state in self.trade_state.items():
+            if state.get('opened', False):
+                summary += f"  {coin}: 已开单 (时间: {state.get('timestamp', 'N/A')}, 订单ID: {state.get('order_id', 'N/A')})\n"
+        return summary
+    
     def on_close_position_detected(self, position: Dict):
         """
         当检测到平仓操作时的回调函数
@@ -108,6 +213,19 @@ class TradingBot:
             # 检查是否为ETH或BTC
             if coin not in TRADING_PAIRS:
                 logger.warning(f"⚠️  币种 {coin} 不在交易列表中，跳过")
+                return
+            
+            # 检查是否已经开过单
+            if self.is_already_opened(coin):
+                logger.warning(f"⚠️  {coin} 已经开过单，跳过本次开单操作")
+                # 发送Telegram通知
+                self.notifier.send_message(
+                    f"⚠️ <b>跳过重复开单</b>\n\n"
+                    f"币种: <b>{coin}</b>\n"
+                    f"原因: 该币种已经开过单\n"
+                    f"开单时间: {self.trade_state[coin].get('timestamp', 'N/A')}\n"
+                    f"订单ID: <code>{self.trade_state[coin].get('order_id', 'N/A')}</code>"
+                )
                 return
             
             # 获取对应的交易对
@@ -158,6 +276,9 @@ class TradingBot:
                             trade_info['quantity'] = abs(position_amt)
                             trade_info['entry_price'] = entry_price
                 
+                # 标记为已开单
+                self.mark_as_opened(coin, trade_info['order_id'])
+                
                 # 发送交易成功通知
                 self.notifier.send_trade_success(trade_info)
             else:
@@ -184,6 +305,14 @@ class TradingBot:
         logger.info(f"测试模式: {'是' if USE_TESTNET else '否'}")
         logger.info(f"Telegram通知: {'启用' if TELEGRAM_ENABLED and self.notifier.enabled else '禁用'}")
         logger.info("=" * 80)
+        logger.info("")
+        
+        # 显示开单状态
+        logger.info("📋 开单状态记录:")
+        state_summary = self.get_trade_state_summary()
+        for line in state_summary.split('\n'):
+            if line.strip():
+                logger.info(f"  {line}")
         logger.info("")
         
         # 显示账户余额
