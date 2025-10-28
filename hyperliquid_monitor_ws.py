@@ -40,11 +40,16 @@ class HyperliquidMonitorWS:
         self.ws_thread = None
         self.callback = None
         self.running = False
+        self.reconnect_count = 0  # 重连次数
+        self.last_ping_time = 0  # 上次ping时间
+        self.last_pong_time = 0  # 上次pong时间
         
         # 统计信息
         self.ws_message_count = 0
         self.ws_error_count = 0
         self.fills_received_count = 0
+        self.ping_count = 0
+        self.pong_count = 0
         
     def _on_ws_message(self, ws, message):
         """WebSocket消息处理"""
@@ -106,14 +111,30 @@ class HyperliquidMonitorWS:
         
         # 如果还在运行状态，尝试重连
         if self.running:
-            logger.info("尝试重新连接WebSocket...")
-            time.sleep(5)
+            self.reconnect_count += 1
+            # 指数退避策略，最多等待30秒
+            wait_time = min(5 * (1.5 ** (self.reconnect_count - 1)), 30)
+            logger.info(f"尝试第 {self.reconnect_count} 次重新连接WebSocket（等待 {wait_time:.1f} 秒）...")
+            time.sleep(wait_time)
             self._connect_websocket()
+    
+    def _on_ws_ping(self, ws, message):
+        """WebSocket Ping处理"""
+        self.last_ping_time = time.time()
+        self.ping_count += 1
+        logger.debug(f"💓 收到Ping (总计: {self.ping_count})")
+    
+    def _on_ws_pong(self, ws, message):
+        """WebSocket Pong处理"""
+        self.last_pong_time = time.time()
+        self.pong_count += 1
+        logger.debug(f"💗 收到Pong (总计: {self.pong_count})")
     
     def _on_ws_open(self, ws):
         """WebSocket连接建立"""
         logger.info("✅ WebSocket连接已建立")
         self.ws_connected = True
+        self.reconnect_count = 0  # 重置重连计数器
         
         # 发送订阅消息
         subscribe_msg = {
@@ -136,17 +157,20 @@ class HyperliquidMonitorWS:
                 on_open=self._on_ws_open,
                 on_message=self._on_ws_message,
                 on_error=self._on_ws_error,
-                on_close=self._on_ws_close
+                on_close=self._on_ws_close,
+                on_ping=self._on_ws_ping,
+                on_pong=self._on_ws_pong
             )
             
             # 在新线程中运行WebSocket，启用心跳机制
-            # ping_interval: 每30秒发送一次ping
+            # ping_interval: 每20秒发送一次ping（减少间隔以保持连接）
             # ping_timeout: 等待pong响应的超时时间
             self.ws_thread = threading.Thread(
                 target=self.ws.run_forever,
                 kwargs={
-                    'ping_interval': 30,  # 每30秒发送心跳
-                    'ping_timeout': 10    # 10秒超时
+                    'ping_interval': 20,  # 每20秒发送心跳（从30秒减少到20秒）
+                    'ping_timeout': 10,   # 10秒超时
+                    'reconnect': 5        # 自动重连间隔
                 }
             )
             self.ws_thread.daemon = True
@@ -162,6 +186,7 @@ class HyperliquidMonitorWS:
                 logger.error("WebSocket连接超时")
                 return False
             
+            logger.info(f"💓 心跳机制已启用: 每20秒发送一次ping")
             return True
             
         except Exception as e:
@@ -494,7 +519,8 @@ class HyperliquidMonitorWS:
                     # 打印统计信息
                     logger.info(f"📊 WebSocket统计: 总消息={self.ws_message_count}, "
                               f"收到订单={self.fills_received_count}, "
-                              f"错误={self.ws_error_count}")
+                              f"Ping={self.ping_count}, Pong={self.pong_count}, "
+                              f"错误={self.ws_error_count}, 重连次数={self.reconnect_count}")
                 
         except KeyboardInterrupt:
             logger.info("监控已停止")

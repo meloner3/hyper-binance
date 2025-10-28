@@ -16,11 +16,12 @@ USER_FILLS_LIMIT = 20  # 每次获取的订单数量，默认20条（仅HTTP轮�
 
 # 交易配置
 LEVERAGE = 100  # 杠杆倍数
-POSITION_SIZE_USDC = 5000  # 持仓量（USDC）
+POSITION_SIZE_USDC = 50  # 保证金金额（USDC），实际持仓价值 = 保证金 × 杠杆
 
 # Hyperliquid API配置
 HYPERLIQUID_API_URL = 'https://api.hyperliquid.xyz/info'
 HYPERLIQUID_WS_URL = 'wss://api.hyperliquid.xyz/ws'  # WebSocket地址
+# WebSocket心跳间隔：20秒（自动发送ping保持连接，防止超时断开）
 
 # 交易对配置
 TRADING_PAIRS = {
